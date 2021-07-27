@@ -1,0 +1,165 @@
+---
+title: "Analysis of Biowulf Waiting Times"
+date: July 27 2021
+author: Gianluca Pegoraro
+output: html_document
+---
+
+
+### Analysis Setup
+Load required packages.
+```{r load-packages}
+library(tidyverse)
+library(lubridate)
+library(ggthemes)
+```
+
+```{r set-knitr-options}
+knitr::opts_chunk$set(
+  fig.path = 'output/',
+  message = FALSE,
+  warning = FALSE
+  )
+```
+
+Set the palette and the running theme for ggplot2.
+```{r set-theme-palette}
+theme_set(theme_bw())
+theme_update(axis.text.x = element_text(
+angle = -45,
+hjust = 0,
+vjust = 0.5
+))
+```
+
+Read Biowulf logs from Susan Chacko. 
+```{r read_data}
+data <- read_tsv("data/hitif_jobs") %>% 
+  rename(q_time = queued_time) %>%
+  mutate(q_time = na_if(q_time, "-")) %>%
+  separate(gres, 
+           into = c("gpu_t", "lscratch_t"), 
+           sep = ",") %>%
+  separate(gpu_t, 
+           into = c("gpu_t", "gpu_type", "gpu_n"), 
+           sep = ":",
+           convert = TRUE) %>%
+  separate(lscratch_t, 
+           into = c("lscratch_t", "lscratch_g"),
+           sep = ":",
+           convert = TRUE) %>%
+  select(user, partition, submit_time, 
+         gpu_type, gpu_n, lscratch_g,
+         q_time)
+
+glimpse(data)
+```
+Tidy up waiting time format. 
+```{r transform-durations}
+q_time <- data %>% pull(q_time)
+
+q_time_trans <- q_time %>% 
+  str_replace("^(\\d:\\d{2})", "0\\1") %>% 
+  str_replace("^(\\d{2}:\\d{2})$", "00:\\1") %>%
+  str_replace("^(\\d{2}:\\d{2}:\\d{2})", "1970-01-01 \\1") %>%
+  str_replace("^\\d-(\\d{2}:\\d{2}:\\d{2})", "1970-01-02 \\1") %>% 
+  ymd_hms()
+
+(q_secs <- as.integer(q_time_trans - origin))
+```
+Replace queueing times in the data table.
+```{r transform-q-time}
+queue_durations <- data %>% 
+  select(-q_time) %>%
+  mutate(q_secs = q_secs)
+
+glimpse(queue_durations)
+```
+
+Percentage of requests with no queue time value (incorrect or too fast).
+```{r na-stats}
+queue_durations %>% 
+  summarise(perc_na = 100*mean(is.na(q_secs))) 
+```
+Percentage of GPU requests by user. 
+```{r users-stats}
+tot <- nrow(queue_durations)
+
+queue_durations %>%
+  group_by(user) %>%
+  summarise(user_perc = 100*(n()/tot)) %>%
+  arrange(desc(user_perc))
+```
+
+Percentage of GPU requests by GPU type.
+```{r gpu_type_perc}
+queue_durations %>%
+  group_by(gpu_type) %>%
+  summarise(gpu_type_perc = 100*(n()/tot)) %>%
+  arrange(desc(gpu_type_perc))
+```
+
+```{r plot-hist-durations, echo = FALSE}
+queue_durations %>%
+  ggplot(aes(x = gpu_type, 
+             y = q_secs/3600,
+             color = user)) +
+  geom_jitter(position = position_jitter(width = 0.3)) +
+  scale_y_continuous(breaks = seq(0, 48, 6)) +
+  scale_color_tableau() +
+  xlab("GPU Type") +
+  ylab("Queue Waiting Time (Hrs)")
+```
+```{r by-gpu-number, echo = FALSE}
+queue_durations %>%
+  ggplot(aes(x = gpu_type, 
+             y = q_secs/3600,
+             color = factor(gpu_n))) +
+  geom_jitter(position = position_jitter(width = 0.3)) +
+  scale_y_continuous(breaks = seq(0, 48, 6)) +
+  scale_color_tableau(name = "# of GPU") +
+  xlab("GPU Type") +
+  ylab("Queue Waiting Time (Hrs)")
+```
+```{r by-user, echo = FALSE}
+queue_durations %>%
+  ggplot(aes(x = gpu_type, 
+             y = q_secs/3600,
+             color = user)) +
+  geom_jitter(position = position_jitter(width = 0.3)) +
+  geom_hline(yintercept = 2,
+             color = "grey30",
+             linetype = "longdash") +
+  scale_y_continuous(breaks = seq(0, 6, 0.5)) +
+  scale_color_tableau() +
+  coord_cartesian(ylim = c(0, 6)) +
+  xlab("GPU Type") +
+  ylab("Queue Waiting Time (Min)")
+```
+
+```{r by-gpu-type, echo = FALSE}
+queue_durations %>%
+  ggplot(aes(x = submit_time, 
+             y = q_secs/3600,
+             color = gpu_type)) +
+  geom_point() +
+  geom_hline(yintercept = 2,
+             color = "grey30",
+             linetype = "longdash") +
+  scale_x_datetime() +
+  scale_y_continuous(breaks = seq(0, 48, 6)) +
+  scale_color_tableau(name = "GPU Type") +
+  xlab("Date") +
+  ylab("Waiting Time (Hrs)")
+```
+Percentage of requests with a waiting time more than a certain threshold. 
+```{r perc-long}
+queue_durations %>%
+  filter(!is.na(q_secs)) %>%
+  group_by(gpu_type) %>%
+  summarise(n = n(),
+            perc_long_1hrs = 100*mean(q_secs >= 3600),
+            perc_long_2hrs = 100*mean(q_secs >= 7200),
+            perc_long_3hrs = 100*mean(q_secs >= 10800))
+```
+
