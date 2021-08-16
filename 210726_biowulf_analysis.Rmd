@@ -1,13 +1,14 @@
 ---
 title: "Analysis of Biowulf Waiting Times"
-date: July 27 2021
+date: Aug 13 2021
 author: Gianluca Pegoraro
-output: html_document
+output: github_document
 ---
 
-
 ### Analysis Setup
+
 Load required packages.
+
 ```{r load-packages}
 library(tidyverse)
 library(lubridate)
@@ -23,6 +24,7 @@ knitr::opts_chunk$set(
 ```
 
 Set the palette and the running theme for ggplot2.
+
 ```{r set-theme-palette}
 theme_set(theme_bw())
 theme_update(axis.text.x = element_text(
@@ -32,7 +34,8 @@ vjust = 0.5
 ))
 ```
 
-Read Biowulf logs from Susan Chacko. 
+Read Biowulf logs from Susan Chacko.
+
 ```{r read_data}
 data <- read_tsv("data/hitif_jobs") %>% 
   rename(q_time = queued_time) %>%
@@ -54,7 +57,9 @@ data <- read_tsv("data/hitif_jobs") %>%
 
 glimpse(data)
 ```
-Tidy up waiting time format. 
+
+Tidy up waiting time format.
+
 ```{r transform-durations}
 q_time <- data %>% pull(q_time)
 
@@ -67,7 +72,9 @@ q_time_trans <- q_time %>%
 
 (q_secs <- as.integer(q_time_trans - origin))
 ```
+
 Replace queueing times in the data table.
+
 ```{r transform-q-time}
 queue_durations <- data %>% 
   select(-q_time) %>%
@@ -77,11 +84,14 @@ glimpse(queue_durations)
 ```
 
 Percentage of requests with no queue time value (incorrect or too fast).
+
 ```{r na-stats}
 queue_durations %>% 
   summarise(perc_na = 100*mean(is.na(q_secs))) 
 ```
-Percentage of GPU requests by user. 
+
+Percentage of GPU requests by user.
+
 ```{r users-stats}
 tot <- nrow(queue_durations)
 
@@ -92,6 +102,7 @@ queue_durations %>%
 ```
 
 Percentage of GPU requests by GPU type.
+
 ```{r gpu_type_perc}
 queue_durations %>%
   group_by(gpu_type) %>%
@@ -110,6 +121,7 @@ queue_durations %>%
   xlab("GPU Type") +
   ylab("Queue Waiting Time (Hrs)")
 ```
+
 ```{r by-gpu-number, echo = FALSE}
 queue_durations %>%
   ggplot(aes(x = gpu_type, 
@@ -121,6 +133,7 @@ queue_durations %>%
   xlab("GPU Type") +
   ylab("Queue Waiting Time (Hrs)")
 ```
+
 ```{r by-user, echo = FALSE}
 queue_durations %>%
   ggplot(aes(x = gpu_type, 
@@ -152,7 +165,9 @@ queue_durations %>%
   xlab("Date") +
   ylab("Waiting Time (Hrs)")
 ```
-Percentage of requests with a waiting time more than a certain threshold. 
+
+Percentage of requests with a waiting time more than a certain threshold.
+
 ```{r perc-long}
 queue_durations %>%
   filter(!is.na(q_secs)) %>%
@@ -162,4 +177,3 @@ queue_durations %>%
             perc_long_2hrs = 100*mean(q_secs >= 7200),
             perc_long_3hrs = 100*mean(q_secs >= 10800))
 ```
-
